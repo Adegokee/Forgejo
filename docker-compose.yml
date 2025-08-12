@@ -1,0 +1,80 @@
+version: "3.8"
+
+networks:       # Define custom networks
+  forgejo-networks:
+    driver: bridge
+services:
+  db:            # PostgreSQL service for Forgejo database
+    image: postgres:15-alpine
+    container_name: forgejo-db
+    restart: always
+    networks:
+      - forgejo-networks
+    environment:
+      POSTGRES_DB: ${FORGEJO_DB_NAME}
+      POSTGRES_USER: ${FORGEJO_DB_USER}
+      POSTGRES_PASSWORD: ${FORGEJO_DB_PASSWORD}
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${FORGEJO_DB_USER}"]
+      interval: ${DB_HEALTHCHECK_INTERVAL}
+      timeout: ${DB_HEALTHCHECK_TIMEOUT}
+      retries: ${DB_HEALTHCHECK_RETRIES}
+
+  forgejo:         # Forgejo Git service
+    image: codeberg.org/forgejo/forgejo:1.21
+    container_name: forgejo
+    restart: always
+    networks:
+      - forgejo-networks
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - "3000"
+    environment:
+      USER_UID: ${USER_UID}
+      USER_GID: ${USER_GID}
+      DB_TYPE: postgres
+      DB_HOST: ${FORGEJO_DB_HOST}
+      DB_PORT: ${FORGEJO_DB_PORT}
+      DB_NAME: ${FORGEJO_DB_NAME}
+      DB_USER: ${FORGEJO_DB_USER}
+      DB_PASSWD: ${FORGEJO_DB_PASSWORD}
+
+      MAILER_ENABLED: "true"
+      MAILER_HOST: ${SMTP_HOST}
+      MAILER_PORT: ${SMTP_PORT}
+      MAILER_USER: ${SMTP_USER}
+      MAILER_PASSWD: ${SMTP_PASSWORD}
+      MAILER_FROM: ${SMTP_FROM}
+      MAILER_IS_TLS_ENABLED: ${SMTP_TLS}
+
+    volumes:
+      - forgejo-data:/var/lib/gitea
+      - forgejo-config:/etc/gitea
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000"]
+      interval: ${FORGEJO_HEALTHCHECK_INTERVAL}
+      timeout: ${FORGEJO_HEALTHCHECK_TIMEOUT}
+      retries: ${FORGEJO_HEALTHCHECK_RETRIES}
+
+  nginx:       # nginx reverse proxy setting
+    image: nginx:alpine
+    container_name: forgejo-nginx
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      - forgejo
+    networks:
+      - forgejo-networks
+
+volumes:   # Define named volumes for persistent storage
+  db-data:
+  forgejo-data:
+  forgejo-config:
