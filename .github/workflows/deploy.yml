@@ -1,4 +1,4 @@
-name: Deploy Forgejo
+name: Deploy Forgejo Runner
 
 
 on:
@@ -33,7 +33,7 @@ jobs:
     - name: Fetch Forgejo Secrets
       run: |
         export VAULT_ADDR=${{ secrets.VAULT_ADDR }}
-        export VAULT_TOKEN=${{ env.VAULT_TOKEN }}
+        export VAULT_TOKEN=${{ secrets.VAULT_TOKEN }}
         vault kv get -format=json secret/FORGEJO > forgejo_secrets.json
         cat forgejo_secrets.json | jq -r '.data.data | to_entries[] | "\(.key)=\(.value)"' >> .env
 
