@@ -1,4 +1,4 @@
-name: Deploy Forgejo Runner
+name: Deploy Forgejo update
 
 
 on:
