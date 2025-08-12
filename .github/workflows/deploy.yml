@@ -40,3 +40,4 @@ jobs:
     - name: Deploy Forgejo with Docker Compose
       run: |
         docker compose --env-file .env up -d --build
+        sudo docker-compose up -d 
