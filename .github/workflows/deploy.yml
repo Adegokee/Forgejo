@@ -74,10 +74,10 @@ jobs:
         ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com
         IMAGE_TAG=latest
          # Build Docker image with secrets as build args
-        docker build \
-          --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
-          --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
-          -t $IMAGE_NAME .
+        # docker build \
+        #   --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
+        #   --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
+        #   -t $IMAGE_NAME .
 
         docker build -t $IMAGE_NAME .
         docker tag $IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
