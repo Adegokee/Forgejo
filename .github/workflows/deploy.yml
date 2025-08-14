@@ -114,7 +114,6 @@
 #               docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
 #               docker compose up -d
 
-
 name: Deploy Forgejo to AWS ECR and VM
 
 on:
@@ -227,9 +226,10 @@ jobs:
             sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
           fi
 
-          # Non-interactive ECR login
+          # ECR login
           aws ecr get-login-password | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
 
-          # Pull and deploy image with environment variables
+          # Pull and deploy image
           sudo docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
           sudo docker compose up -d
+
