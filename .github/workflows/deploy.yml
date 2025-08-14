@@ -114,7 +114,7 @@
 #               docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
 #               docker compose up -d
 
-name: Deploy Forgejo to AWS ECR and VM New Updates
+name: Deploy Forgejo to AWS ECR and VM
 
 on:
   push:
