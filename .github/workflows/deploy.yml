@@ -70,8 +70,8 @@ jobs:
 
     - name: Build and Push Docker Image to ECR
       run: |
-        IMAGE_NAME=forgejo
-        ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde
+        IMAGE_NAME=adegokebabatunde
+        ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com
         IMAGE_TAG=latest
 
         docker build -t $IMAGE_NAME .
