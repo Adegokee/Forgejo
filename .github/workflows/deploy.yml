@@ -203,7 +203,7 @@ jobs:
         script: |
           cd /home/ubuntu
 
-          # Install AWS CLI v2 if not installed
+          # Install AWS CLI if missing
           if ! command -v aws &> /dev/null; then
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
@@ -211,7 +211,7 @@ jobs:
           fi
           aws --version
 
-          # Install Docker & Docker Compose if not installed
+          # Install Docker if missing
           if ! command -v docker &> /dev/null; then
             sudo apt-get remove -y docker docker-engine docker.io containerd runc
             sudo apt-get update
@@ -225,7 +225,10 @@ jobs:
           sudo docker --version
           sudo docker compose version
 
-          # Login to ECR and deploy
+          # Non-interactive ECR login
           aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+
+          # Pull and deploy image
           sudo docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
           sudo docker compose up -d
+
