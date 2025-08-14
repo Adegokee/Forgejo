@@ -1,4 +1,4 @@
-name: Deploy Forgejo to AWS ECR and VM New Update
+name: Deploy Forgejo to AWS ECR and VM New Updates
 
 on:
   push:
