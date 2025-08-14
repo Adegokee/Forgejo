@@ -7,7 +7,7 @@ on:
 
 jobs:
   deploy:
-    runs-on: ubuntu-latest
+    runs-on: [ubuntu-latest, self-hosted]
 
     steps:
     - name: Checkout repository
@@ -82,3 +82,15 @@ jobs:
       run: |
         docker compose --env-file .env up -d --build
         docker compose up -d 
+    - name: Deploy to VM via SSH
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ secrets.VM_HOST }}
+        username: ${{ secrets.VM_USER }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          cd /home/ubuntu
+          aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+          docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+          docker compose up -d
+
