@@ -73,6 +73,11 @@ jobs:
         IMAGE_NAME=adegokebabatunde
         ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com
         IMAGE_TAG=latest
+         # Build Docker image with secrets as build args
+        docker build \
+          --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
+          --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
+          -t $IMAGE_NAME .
 
         docker build -t $IMAGE_NAME .
         docker tag $IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
@@ -88,6 +93,12 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
+          FORGEJO_DB_USER: ${{ env.FORGEJO_DB_USER }}
+          FORGEJO_DB_PASS: ${{ env.FORGEJO_DB_PASS }}
         script: |
           cd /home/ubuntu
           if ! command -v aws &> /dev/null; then
@@ -113,6 +124,26 @@ jobs:
               aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
               docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
               docker compose up -d
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # name: Deploy Forgejo to AWS ECR and VM
 
