@@ -276,8 +276,19 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    - name: ECR login and deploy
+    - name: Login to ECR
       run: |
-        aws ecr get-login-password | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
-        sudo docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
-        sudo docker compose up -d
+        aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+
+    - name: Build Docker image
+      run: |
+        docker build -t adegokebabatunde .
+
+    - name: Tag Docker image
+      run: |
+        docker tag adegokebabatunde:latest 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+
+    - name: Push Docker image to ECR
+      run: |
+        docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+
