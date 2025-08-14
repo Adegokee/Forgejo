@@ -200,6 +200,10 @@ jobs:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: us-east-1
         script: |
           cd /home/ubuntu
 
@@ -225,8 +229,8 @@ jobs:
           sudo docker --version
           sudo docker compose version
 
-          # Non-interactive ECR login
-          aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+          # ECR login with environment credentials
+          aws ecr get-login-password | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
 
           # Pull and deploy image
           sudo docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
