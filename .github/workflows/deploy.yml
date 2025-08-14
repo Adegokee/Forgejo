@@ -1,4 +1,4 @@
-name: Deploy Forgejo New-update
+name: Deploy Forgejo
 
 on:
   push:
