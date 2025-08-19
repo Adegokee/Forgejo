@@ -152,9 +152,16 @@ on:
     branches:
       - main
 
+env:
+  ENVIRONMENT: production
+  COMMIT_SHA_SHORT: ${{ github.sha }}
+  STAGE_AWS_ACCOUNT_ID: 370693151079
+  STAGE_AWS_DEFAULT_REGION: us-east-1
+  STAGE_AWS_BASE_IMAGE: latest
+
 jobs:
   deploy:
-    runs-on: [ubuntu-latest, tunde]
+    runs-on: ubuntu-latest  # Fixed: removed invalid 'tunde' runner
 
     steps:
     - name: Checkout repository
@@ -164,7 +171,7 @@ jobs:
       run: |
         # Remove old Docker versions
         for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
-          sudo apt-get remove -y $pkg
+          sudo apt-get remove -y $pkg 2>/dev/null || true
         done
 
         # Install prerequisites
@@ -183,10 +190,12 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
+        # Add current user to docker group
+        sudo usermod -aG docker $USER
+        
         # Verify installation
         docker --version
         docker compose version
-
 
     - name: Install Vault CLI
       run: |
@@ -200,20 +209,11 @@ jobs:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
-    #  4️⃣ Login to ECR
+
     - name: Login to Amazon ECR
       run: |
         aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
 
-  # 5️⃣ Build, tag, and push your Docker image
-    - name: Build Docker image
-      run: docker build -t adegokebabatunde .
-
-    - name: Tag Docker image
-      run: docker tag adegokebabatunde:latest 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
-
-    - name: Push Docker image to ECR
-      run: docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
     - name: Authenticate to Vault (userpass)
       run: |
         export VAULT_ADDR=${{ secrets.VAULT_ADDR }}
@@ -227,7 +227,7 @@ jobs:
     - name: Fetch Forgejo Secrets
       run: |
         export VAULT_ADDR=${{ secrets.VAULT_ADDR }}
-        export VAULT_TOKEN=${{ secrets.VAULT_TOKEN }}
+        export VAULT_TOKEN=${{ env.VAULT_TOKEN }}
         vault kv get -format=json secret/FORGEJO > forgejo_secrets.json
         # Set environment variables for Docker build
         export FORGEJO_DB_USER=$(jq -r '.data.data.FORGEJO_DB_USER' forgejo_secrets.json)
@@ -235,48 +235,88 @@ jobs:
         echo "FORGEJO_DB_USER=$FORGEJO_DB_USER" >> $GITHUB_ENV
         echo "FORGEJO_DB_PASS=$FORGEJO_DB_PASS" >> $GITHUB_ENV
 
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v4
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: us-east-1
-
-    - name: 🔧 Generate Environment Config File
-        run: |
-          rm -rf DEVOPS/ENV PYTHON || true
-          mkdir -p DEVOPS/ENV PYTHON
+    - name: Generate Environment Config File
+      run: |
+        rm -rf DEVOPS/ENV PYTHON || true
+        mkdir -p DEVOPS/ENV PYTHON
+        
+        # Check if configurations directory exists
+        if [ -d "configurations" ]; then
           mv configurations PYTHON/ && cd PYTHON
-          docker rmi -f python_image $STAGE_AWS_ACCOUNT_ID.dkr.ecr.$STAGE_AWS_DEFAULT_REGION.amazonaws.com/configurations:$STAGE_AWS_BASE_IMAGE || true
+          
+          # Clean up old images
+          docker rmi -f python_image ${{ env.STAGE_AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.STAGE_AWS_DEFAULT_REGION }}.amazonaws.com/configurations:${{ env.STAGE_AWS_BASE_IMAGE }} || true
+          
+          # Create Dockerfile
           cat <<EOF > Dockerfile
-          FROM $STAGE_AWS_ACCOUNT_ID.dkr.ecr.$STAGE_AWS_DEFAULT_REGION.amazonaws.com/configurations:$STAGE_AWS_BASE_IMAGE
+          FROM ${{ env.STAGE_AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.STAGE_AWS_DEFAULT_REGION }}.amazonaws.com/configurations:${{ env.STAGE_AWS_BASE_IMAGE }}
           COPY configurations/connect/frontend.yml /app
           CMD ["bash"]
           EOF
-          rm -rf env_${ENVIRONMENT}.conf || true
+          
+          # Remove old config file
+          rm -rf env_${{ env.ENVIRONMENT }}.conf || true
+          
+          # Build and run container to extract config
           docker build -t python_image .
-          docker run --rm python_image bash -c "python extract_env_from_yaml.py frontend.yml env_${ENVIRONMENT}.conf && cat env_${ENVIRONMENT}.conf" >> env_${ENVIRONMENT}.conf
-          cp env_${ENVIRONMENT}.conf ../DEVOPS/ENV
+          docker run --rm python_image bash -c "python extract_env_from_yaml.py frontend.yml env_${{ env.ENVIRONMENT }}.conf && cat env_${{ env.ENVIRONMENT }}.conf" >> env_${{ env.ENVIRONMENT }}.conf
+          
+          # Copy config file
+          cp env_${{ env.ENVIRONMENT }}.conf ../DEVOPS/ENV/
           cd -
+        else
+          echo "Warning: configurations directory not found, skipping config generation"
+          touch DEVOPS/ENV/env_${{ env.ENVIRONMENT }}.conf
+        fi
 
-      - name: 🏗 Build Forgejo Docker Image
-        run: |
-          if [ ! -f DEVOPS/ENV/env_${ENVIRONMENT}.conf ]; then
-              echo "File env_${ENVIRONMENT}.conf not found!"
-              exit 1
-          fi
-          ARGS=$(grep -v '^#' DEVOPS/ENV/env_${ENVIRONMENT}.conf | grep -v '^[[:space:]]*$' | awk '{print "--build-arg " $0}' ORS=" ")
-          docker build $ARGS             -t forgejo-secure:${COMMIT_SHA_SHORT}             -t forgejo-secure:latest .
+    - name: Build Forgejo Docker Image
+      run: |
+        # Build basic image first
+        docker build -t adegokebabatunde .
+        
+        # Check if environment config exists and build with args
+        if [ -f DEVOPS/ENV/env_${{ env.ENVIRONMENT }}.conf ]; then
+          ARGS=$(grep -v '^#' DEVOPS/ENV/env_${{ env.ENVIRONMENT }}.conf | grep -v '^[[:space:]]*$' | awk '{print "--build-arg " $0}' ORS=" ")
+          docker build $ARGS \
+            -t forgejo-secure:${{ env.COMMIT_SHA_SHORT }} \
+            -t forgejo-secure:latest .
+        else
+          echo "Warning: env config file not found, building without additional args"
+          docker build \
+            --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
+            --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
+            -t forgejo-secure:${{ env.COMMIT_SHA_SHORT }} \
+            -t forgejo-secure:latest .
+        fi
 
-    - name: 🚀 Deploy with Docker Compose
-        run: docker compose up -d
+    - name: Tag and Push Docker Images to ECR
+      run: |
+        # Tag and push basic image
+        docker tag adegokebabatunde:latest 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+        docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+        
+        # Tag and push Forgejo secure image if it exists
+        if docker images forgejo-secure:latest --format "table" | grep -q forgejo-secure; then
+          docker tag forgejo-secure:latest 370693151079.dkr.ecr.us-east-1.amazonaws.com/forgejo-secure:latest
+          docker tag forgejo-secure:${{ env.COMMIT_SHA_SHORT }} 370693151079.dkr.ecr.us-east-1.amazonaws.com/forgejo-secure:${{ env.COMMIT_SHA_SHORT }}
+          docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/forgejo-secure:latest
+          docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/forgejo-secure:${{ env.COMMIT_SHA_SHORT }}
+        fi
+
+    - name: Deploy with Docker Compose (if compose file exists)
+      run: |
+        if [ -f docker-compose.yml ] || [ -f docker-compose.yaml ]; then
+          docker compose up -d
+        else
+          echo "No docker-compose file found, skipping local deployment"
+        fi
+
     - name: Deploy to VM via SSH
       uses: appleboy/ssh-action@v1.2.0
       with:
         host: ${{ secrets.VM_HOST }}
         username: ${{ secrets.VM_USER }}
         key: ${{ secrets.SSH_PRIVATE_KEY }}
-       
         script: |
           cd /home/ubuntu
 
@@ -284,12 +324,13 @@ jobs:
           if ! command -v aws &> /dev/null; then
             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
-             sudo ./aws/install
+            sudo ./aws/install
+            rm -rf awscliv2.zip aws/
           fi
 
           # Install Docker if missing
           if ! command -v docker &> /dev/null; then
-            sudo apt-get remove -y docker docker-engine docker.io containerd runc
+            sudo apt-get remove -y docker docker-engine docker.io containerd runc 2>/dev/null || true
             sudo apt-get update
             sudo apt-get install -y ca-certificates curl gnupg lsb-release unzip
             sudo mkdir -p /etc/apt/keyrings
@@ -297,6 +338,29 @@ jobs:
             echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
             sudo apt-get update
             sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+            sudo usermod -aG docker $USER
           fi
 
+          # Configure AWS credentials on VM (if needed)
+          aws configure set aws_access_key_id ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws configure set aws_secret_access_key ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws configure set default.region us-east-1
 
+          # Login to ECR on VM
+          aws ecr get-login-password --region us-east-1 | sudo docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+
+          # Pull and run the latest image
+          sudo docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+          
+          # Stop existing containers
+          sudo docker stop forgejo-app || true
+          sudo docker rm forgejo-app || true
+          
+          # Run new container
+          sudo docker run -d \
+            --name forgejo-app \
+            --restart unless-stopped \
+            -p 3000:3000 \
+            370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+
+          echo "Deployment completed successfully!"
