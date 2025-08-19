@@ -161,7 +161,7 @@ env:
 
 jobs:
   deploy:
-    runs-on: [ ubuntu-latest self-hosted ] # Fixed: removed invalid 'tunde' runner
+    runs-on: ubuntu-latest # Fixed: removed invalid 'tunde' runner
 
     steps:
     - name: Checkout repository
