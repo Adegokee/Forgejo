@@ -1,4 +1,5 @@
-# name: Deploy Forgejo to AWS ECR and VM New Updates
+
+# name: Deploy Forgejo to AWS ECR and VM
 
 # on:
 #   push:
@@ -15,23 +16,31 @@
 
 #     - name: Install Docker
 #       run: |
+#         # Remove old Docker versions
 #         for pkg in docker.io docker-doc docker-compose docker-compose-v2 podman-docker containerd runc; do
 #           sudo apt-get remove -y $pkg
 #         done
+
+#         # Install prerequisites
 #         sudo apt-get update
-#         sudo apt-get install docker-compose -y
-#         sudo apt-get install -y ca-certificates curl
-#         sudo install -m 0755 -d /etc/apt/keyrings
-#         sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
-#         sudo chmod a+r /etc/apt/keyrings/docker.asc
-#         echo \
-#           "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu \
-#           $(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}") stable" | \
-#           sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+#         sudo apt-get install -y ca-certificates curl gnupg lsb-release unzip
+
+#         # Add Docker GPG key and repository
+#         sudo mkdir -p /etc/apt/keyrings
+#         curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+#         sudo chmod a+r /etc/apt/keyrings/docker.gpg
+
+#         echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" \
+#           | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+#         # Update apt and install Docker
 #         sudo apt-get update
 #         sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+#         # Verify installation
 #         docker --version
 #         docker compose version
+
 
 #     - name: Install Vault CLI
 #       run: |
@@ -39,6 +48,26 @@
 #         echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list
 #         sudo apt update && sudo apt install -y vault jq
 
+#     - name: Configure AWS credentials
+#       uses: aws-actions/configure-aws-credentials@v4
+#       with:
+#         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+#         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+#         aws-region: us-east-1
+#     #  4️⃣ Login to ECR
+#     - name: Login to Amazon ECR
+#       run: |
+#         aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+
+#   # 5️⃣ Build, tag, and push your Docker image
+#     - name: Build Docker image
+#       run: docker build -t adegokebabatunde .
+
+#     - name: Tag Docker image
+#       run: docker tag adegokebabatunde:latest 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
+
+#     - name: Push Docker image to ECR
+#       run: docker push 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
 #     - name: Authenticate to Vault (userpass)
 #       run: |
 #         export VAULT_ADDR=${{ secrets.VAULT_ADDR }}
@@ -54,61 +83,51 @@
 #         export VAULT_ADDR=${{ secrets.VAULT_ADDR }}
 #         export VAULT_TOKEN=${{ secrets.VAULT_TOKEN }}
 #         vault kv get -format=json secret/FORGEJO > forgejo_secrets.json
-#         cat forgejo_secrets.json | jq -r '.data.data | to_entries[] | "\(.key)=\(.value)"' >> .env
+#         # Set environment variables for Docker build
+#         export FORGEJO_DB_USER=$(jq -r '.data.data.FORGEJO_DB_USER' forgejo_secrets.json)
+#         export FORGEJO_DB_PASS=$(jq -r '.data.data.FORGEJO_DB_PASS' forgejo_secrets.json)
+#         echo "FORGEJO_DB_USER=$FORGEJO_DB_USER" >> $GITHUB_ENV
+#         echo "FORGEJO_DB_PASS=$FORGEJO_DB_PASS" >> $GITHUB_ENV
 
-#     # AWS ECR Login
 #     - name: Configure AWS credentials
 #       uses: aws-actions/configure-aws-credentials@v4
 #       with:
 #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
 #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#         aws-region: us-east-1 # Change to your region
-
-#     - name: Login to Amazon ECR
-#       run: |
-#         aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
+#         aws-region: us-east-1
 
 #     - name: Build and Push Docker Image to ECR
 #       run: |
 #         IMAGE_NAME=adegokebabatunde
 #         ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com
 #         IMAGE_TAG=latest
-#          # Build Docker image with secrets as build args
-#         # docker build \
-#         #   --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
-#         #   --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
-#         #   -t $IMAGE_NAME .
 
-#         docker build -t $IMAGE_NAME .
+#         # Build Docker image with secrets as build args
+#         docker build \
+#           --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
+#           --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
+#           -t $IMAGE_NAME .
 #         docker tag $IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
 #         docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
 
-#     - name: Deploy Forgejo with Docker Compose
-#       run: |
-#         docker compose --env-file .env up -d --build
-#         docker compose up -d 
 #     - name: Deploy to VM via SSH
 #       uses: appleboy/ssh-action@v1.2.0
 #       with:
 #         host: ${{ secrets.VM_HOST }}
 #         username: ${{ secrets.VM_USER }}
 #         key: ${{ secrets.SSH_PRIVATE_KEY }}
-#         # env:
-#         #   AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-#         #   AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-#         #   AWS_DEFAULT_REGION: us-east-1
-#         #   FORGEJO_DB_USER: ${{ env.FORGEJO_DB_USER }}
-#         #   FORGEJO_DB_PASS: ${{ env.FORGEJO_DB_PASS }}
+       
 #         script: |
 #           cd /home/ubuntu
+
+#           # Install AWS CLI if missing
 #           if ! command -v aws &> /dev/null; then
 #             curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
 #             unzip awscliv2.zip
-#             sudo ./aws/install
+#              sudo ./aws/install
 #           fi
-#           aws --version
 
-#           # Install Docker & Docker Compose if not installed
+#           # Install Docker if missing
 #           if ! command -v docker &> /dev/null; then
 #             sudo apt-get remove -y docker docker-engine docker.io containerd runc
 #             sudo apt-get update
@@ -119,25 +138,6 @@
 #             sudo apt-get update
 #             sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 #           fi
-#           docker --version
-#           docker compose version
-#               aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 370693151079.dkr.ecr.us-east-1.amazonaws.com
-#               docker pull 370693151079.dkr.ecr.us-east-1.amazonaws.com/adegokebabatunde:latest
-#               docker compose up -d
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
@@ -242,20 +242,34 @@ jobs:
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         aws-region: us-east-1
 
-    - name: Build and Push Docker Image to ECR
-      run: |
-        IMAGE_NAME=adegokebabatunde
-        ECR_REGISTRY=370693151079.dkr.ecr.us-east-1.amazonaws.com
-        IMAGE_TAG=latest
+    - name: 🔧 Generate Environment Config File
+        run: |
+          rm -rf DEVOPS/ENV PYTHON || true
+          mkdir -p DEVOPS/ENV PYTHON
+          mv configurations PYTHON/ && cd PYTHON
+          docker rmi -f python_image $STAGE_AWS_ACCOUNT_ID.dkr.ecr.$STAGE_AWS_DEFAULT_REGION.amazonaws.com/configurations:$STAGE_AWS_BASE_IMAGE || true
+          cat <<EOF > Dockerfile
+          FROM $STAGE_AWS_ACCOUNT_ID.dkr.ecr.$STAGE_AWS_DEFAULT_REGION.amazonaws.com/configurations:$STAGE_AWS_BASE_IMAGE
+          COPY configurations/connect/frontend.yml /app
+          CMD ["bash"]
+          EOF
+          rm -rf env_${ENVIRONMENT}.conf || true
+          docker build -t python_image .
+          docker run --rm python_image bash -c "python extract_env_from_yaml.py frontend.yml env_${ENVIRONMENT}.conf && cat env_${ENVIRONMENT}.conf" >> env_${ENVIRONMENT}.conf
+          cp env_${ENVIRONMENT}.conf ../DEVOPS/ENV
+          cd -
 
-        # Build Docker image with secrets as build args
-        docker build \
-          --build-arg FORGEJO_DB_USER=${{ env.FORGEJO_DB_USER }} \
-          --build-arg FORGEJO_DB_PASS=${{ env.FORGEJO_DB_PASS }} \
-          -t $IMAGE_NAME .
-        docker tag $IMAGE_NAME:latest $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
-        docker push $ECR_REGISTRY/$IMAGE_NAME:$IMAGE_TAG
+      - name: 🏗 Build Forgejo Docker Image
+        run: |
+          if [ ! -f DEVOPS/ENV/env_${ENVIRONMENT}.conf ]; then
+              echo "File env_${ENVIRONMENT}.conf not found!"
+              exit 1
+          fi
+          ARGS=$(grep -v '^#' DEVOPS/ENV/env_${ENVIRONMENT}.conf | grep -v '^[[:space:]]*$' | awk '{print "--build-arg " $0}' ORS=" ")
+          docker build $ARGS             -t forgejo-secure:${COMMIT_SHA_SHORT}             -t forgejo-secure:latest .
 
+    - name: 🚀 Deploy with Docker Compose
+        run: docker compose up -d
     - name: Deploy to VM via SSH
       uses: appleboy/ssh-action@v1.2.0
       with:
